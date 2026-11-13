@@ -1,0 +1,736 @@
+-- ==========================================================
+-- ระบบ ✦ ค่ายM7 (Full Version: Aim Lock, Box/Tracer ESP, Health, Movement)
+-- วิธีใช้ใน Roblox Studio: วางใน StarterPlayer -> StarterPlayerScripts (LocalScript)
+-- ==========================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- ตั้งค่าระบบเริ่มต้น
+local Config = {
+	TargetLockEnabled = false,
+	WallCheck = true, -- true = ไม่ล็อคทะลุกำแพง (ค่าเริ่มต้น), false = ล็อคทะลุกำแพงได้
+	BoxESPEnabled = false,
+	TracerESPEnabled = false,
+	HealthBarEnabled = false,
+	FOVRadius = 120,
+	LockSpeed = 0.45
+}
+
+local M7Movement = {
+	SpeedEnabled = false,
+	JumpEnabled = false,
+	WalkSpeed = 32,
+	JumpPower = 85
+}
+
+local NORMAL_SPEED = 16
+local NORMAL_JUMP = 50
+
+-- ==========================================
+-- 1. สร้าง ScreenGui และ วงกลมเป้ากลางจอ (FOV)
+-- ==========================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CampM7_StudioSystem_v3"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = playerGui
+
+-- โฟลเดอร์เก็บเส้น Tracer และกรอบสี่เหลี่ยม Box ESP (ทำงานเสถียร 60 FPS ไม่เอ๋อ)
+local espFolder = Instance.new("Folder")
+espFolder.Name = "M7_ESP_Overlay"
+espFolder.Parent = screenGui
+
+local fovCircle = Instance.new("Frame")
+fovCircle.Name = "FOVCircle"
+fovCircle.Size = UDim2.new(0, Config.FOVRadius * 2, 0, Config.FOVRadius * 2)
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
+fovCircle.BackgroundTransparency = 1
+fovCircle.Visible = false
+fovCircle.ZIndex = 5
+fovCircle.Parent = screenGui
+
+local fovCorner = Instance.new("UICorner")
+fovCorner.CornerRadius = UDim.new(1, 0)
+fovCorner.Parent = fovCircle
+
+local fovStroke = Instance.new("UIStroke")
+fovStroke.Color = Color3.fromRGB(0, 210, 255)
+fovStroke.Thickness = 1.5
+fovStroke.Transparency = 0.2
+fovStroke.Parent = fovCircle
+
+-- ==========================================
+-- 2. ปุ่มโลโก้ N7 (แสดงเมื่อกดซ่อน UI)
+-- ==========================================
+local n7Button = Instance.new("TextButton")
+n7Button.Name = "N7_RestoreButton"
+n7Button.Size = UDim2.new(0, 58, 0, 58)
+n7Button.Position = UDim2.new(0.05, 0, 0.2, 0)
+n7Button.BackgroundColor3 = Color3.fromRGB(16, 20, 32)
+n7Button.Text = ""
+n7Button.Visible = false
+n7Button.Active = true
+n7Button.Draggable = true
+n7Button.AutoButtonColor = false
+n7Button.ZIndex = 20
+n7Button.Parent = screenGui
+
+local n7Corner = Instance.new("UICorner")
+n7Corner.CornerRadius = UDim.new(1, 0)
+n7Corner.Parent = n7Button
+
+local n7Stroke = Instance.new("UIStroke")
+n7Stroke.Color = Color3.fromRGB(0, 200, 255)
+n7Stroke.Thickness = 2
+n7Stroke.Parent = n7Button
+
+local n7Gradient = Instance.new("UIGradient")
+n7Gradient.Color = ColorSequence.new{
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 35, 60)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 12, 20))
+}
+n7Gradient.Rotation = 45
+n7Gradient.Parent = n7Button
+
+local n7Text = Instance.new("TextLabel")
+n7Text.Size = UDim2.new(1, 0, 1, 0)
+n7Text.BackgroundTransparency = 1
+n7Text.Text = "N7"
+n7Text.TextColor3 = Color3.fromRGB(0, 220, 255)
+n7Text.Font = Enum.Font.GothamBlack
+n7Text.TextSize = 20
+n7Text.ZIndex = 21
+n7Text.Parent = n7Button
+
+local n7SubStar = Instance.new("TextLabel")
+n7SubStar.Size = UDim2.new(1, 0, 0, 14)
+n7SubStar.Position = UDim2.new(0, 0, 0, 4)
+n7SubStar.BackgroundTransparency = 1
+n7SubStar.Text = "✦"
+n7SubStar.TextColor3 = Color3.fromRGB(255, 255, 255)
+n7SubStar.Font = Enum.Font.GothamBold
+n7SubStar.TextSize = 10
+n7SubStar.ZIndex = 21
+n7SubStar.Parent = n7Button
+
+-- ==========================================
+-- 3. หน้าต่างเมนูหลัก (ค่ายM7)
+-- ==========================================
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 340, 0, 495)
+mainFrame.Position = UDim2.new(0.05, 0, 0.16, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(14, 16, 25)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.ClipsDescendants = true
+mainFrame.ZIndex = 10
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 14)
+mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(65, 155, 255)
+mainStroke.Thickness = 1.5
+mainStroke.Parent = mainFrame
+
+-- เอฟเฟกต์ดวงดาวพื้นหลัง
+for i = 1, 45 do
+	local star = Instance.new("Frame")
+	local size = math.random(2, 3)
+	star.Size = UDim2.new(0, size, 0, size)
+	star.Position = UDim2.new(math.random(2, 98) / 100, 0, math.random(2, 98) / 100, 0)
+	star.BackgroundColor3 = Color3.fromRGB(220, 240, 255)
+	star.BackgroundTransparency = math.random(2, 7) / 10
+	star.BorderSizePixel = 0
+	star.ZIndex = 11
+	
+	local sCorner = Instance.new("UICorner")
+	sCorner.CornerRadius = UDim.new(1, 0)
+	sCorner.Parent = star
+	star.Parent = mainFrame
+	
+	task.spawn(function()
+		while star.Parent do
+			local tween = TweenService:Create(star, TweenInfo.new(math.random(12, 28)/10), {BackgroundTransparency = math.random(2, 9)/10})
+			tween:Play()
+			tween.Completed:Wait()
+		end
+	end)
+end
+
+-- แถบหัวข้อด้านบน + ปุ่มลบ (-) ซ่อน UI
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 44)
+header.BackgroundColor3 = Color3.fromRGB(22, 26, 40)
+header.BackgroundTransparency = 0.25
+header.BorderSizePixel = 0
+header.ZIndex = 12
+header.Parent = mainFrame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(0.7, 0, 1, 0)
+title.Position = UDim2.new(0, 16, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "✦ ค่ายM7"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 17
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.ZIndex = 13
+title.Parent = header
+
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+minimizeBtn.Position = UDim2.new(1, -38, 0.5, -15)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(35, 42, 62)
+minimizeBtn.Text = "-"
+minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 20
+minimizeBtn.ZIndex = 13
+minimizeBtn.Parent = header
+
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 8)
+minCorner.Parent = minimizeBtn
+
+minimizeBtn.MouseButton1Click:Connect(function()
+	mainFrame.Visible = false
+	n7Button.Position = mainFrame.Position
+	n7Button.Visible = true
+end)
+
+n7Button.MouseButton1Click:Connect(function()
+	n7Button.Visible = false
+	mainFrame.Position = n7Button.Position
+	mainFrame.Visible = true
+end)
+
+-- ==========================================
+-- 4. ตัวช่วยสร้าง UI (Toggle, Mode Switch, Slider)
+-- ==========================================
+local function createToggle(labelText, posY, callback)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, -28, 0, 42)
+	row.Position = UDim2.new(0, 14, 0, posY)
+	row.BackgroundColor3 = Color3.fromRGB(24, 28, 42)
+	row.BackgroundTransparency = 0.2
+	row.ZIndex = 12
+	row.Parent = mainFrame
+
+	local rCorner = Instance.new("UICorner")
+	rCorner.CornerRadius = UDim.new(0, 10)
+	rCorner.Parent = row
+
+	local rStroke = Instance.new("UIStroke")
+	rStroke.Color = Color3.fromRGB(45, 55, 80)
+	rStroke.Thickness = 1
+	rStroke.Parent = row
+
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.new(0.72, 0, 1, 0)
+	text.Position = UDim2.new(0, 12, 0, 0)
+	text.BackgroundTransparency = 1
+	text.Text = labelText
+	text.TextColor3 = Color3.fromRGB(235, 240, 250)
+	text.Font = Enum.Font.GothamMedium
+	text.TextSize = 13
+	text.TextXAlignment = Enum.TextXAlignment.Left
+	text.ZIndex = 13
+	text.Parent = row
+
+	local switchBtn = Instance.new("TextButton")
+	switchBtn.Size = UDim2.new(0, 44, 0, 22)
+	switchBtn.Position = UDim2.new(1, -54, 0.5, -11)
+	switchBtn.BackgroundColor3 = Color3.fromRGB(50, 56, 74)
+	switchBtn.Text = ""
+	switchBtn.AutoButtonColor = false
+	switchBtn.ZIndex = 13
+	switchBtn.Parent = row
+
+	local swCorner = Instance.new("UICorner")
+	swCorner.CornerRadius = UDim.new(1, 0)
+	swCorner.Parent = switchBtn
+
+	local knob = Instance.new("Frame")
+	knob.Size = UDim2.new(0, 16, 0, 16)
+	knob.Position = UDim2.new(0, 3, 0.5, -8)
+	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	knob.ZIndex = 14
+	knob.Parent = switchBtn
+
+	local kCorner = Instance.new("UICorner")
+	kCorner.CornerRadius = UDim.new(1, 0)
+	kCorner.Parent = knob
+
+	local state = false
+	switchBtn.MouseButton1Click:Connect(function()
+		state = not state
+		local targetPos = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+		local targetColor = state and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(50, 56, 74)
+
+		TweenService:Create(knob, TweenInfo.new(0.18), {Position = targetPos}):Play()
+		TweenService:Create(switchBtn, TweenInfo.new(0.18), {BackgroundColor3 = targetColor}):Play()
+		callback(state)
+	end)
+end
+
+local function createModeSwitcher(posY)
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(1, -28, 0, 44)
+	container.Position = UDim2.new(0, 14, 0, posY)
+	container.BackgroundColor3 = Color3.fromRGB(20, 24, 36)
+	container.ZIndex = 12
+	container.Parent = mainFrame
+
+	local cCorner = Instance.new("UICorner")
+	cCorner.CornerRadius = UDim.new(0, 10)
+	cCorner.Parent = container
+
+	local cStroke = Instance.new("UIStroke")
+	cStroke.Color = Color3.fromRGB(55, 70, 105)
+	cStroke.Thickness = 1
+	cStroke.Parent = container
+
+	local indicator = Instance.new("Frame")
+	indicator.Size = UDim2.new(0.48, 0, 1, -8)
+	indicator.Position = UDim2.new(0.015, 0, 0, 4)
+	indicator.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+	indicator.ZIndex = 13
+	indicator.Parent = container
+
+	local indCorner = Instance.new("UICorner")
+	indCorner.CornerRadius = UDim.new(0, 8)
+	indCorner.Parent = indicator
+
+	local btnNormal = Instance.new("TextButton")
+	btnNormal.Size = UDim2.new(0.5, 0, 1, 0)
+	btnNormal.Position = UDim2.new(0, 0, 0, 0)
+	btnNormal.BackgroundTransparency = 1
+	btnNormal.Text = "ไม่ล็อคทะลุกำแพง"
+	btnNormal.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btnNormal.Font = Enum.Font.GothamBold
+	btnNormal.TextSize = 12
+	btnNormal.ZIndex = 14
+	btnNormal.Parent = container
+
+	local btnWall = Instance.new("TextButton")
+	btnWall.Size = UDim2.new(0.5, 0, 1, 0)
+	btnWall.Position = UDim2.new(0.5, 0, 0, 0)
+	btnWall.BackgroundTransparency = 1
+	btnWall.Text = "ล็อคทะลุกำแพง"
+	btnWall.TextColor3 = Color3.fromRGB(160, 175, 200)
+	btnWall.Font = Enum.Font.GothamMedium
+	btnWall.TextSize = 12
+	btnWall.ZIndex = 14
+	btnWall.Parent = container
+
+	btnNormal.MouseButton1Click:Connect(function()
+		Config.WallCheck = true
+		TweenService:Create(indicator, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+			Position = UDim2.new(0.015, 0, 0, 4),
+			BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+		}):Play()
+		btnNormal.TextColor3 = Color3.fromRGB(255, 255, 255)
+		btnNormal.Font = Enum.Font.GothamBold
+		btnWall.TextColor3 = Color3.fromRGB(160, 175, 200)
+		btnWall.Font = Enum.Font.GothamMedium
+	end)
+
+	btnWall.MouseButton1Click:Connect(function()
+		Config.WallCheck = false
+		TweenService:Create(indicator, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+			Position = UDim2.new(0.505, 0, 0, 4),
+			BackgroundColor3 = Color3.fromRGB(220, 65, 95)
+		}):Play()
+		btnWall.TextColor3 = Color3.fromRGB(255, 255, 255)
+		btnWall.Font = Enum.Font.GothamBold
+		btnNormal.TextColor3 = Color3.fromRGB(160, 175, 200)
+		btnNormal.Font = Enum.Font.GothamMedium
+	end)
+end
+
+local function createFOVSlider(posY)
+	local box = Instance.new("Frame")
+	box.Size = UDim2.new(1, -28, 0, 52)
+	box.Position = UDim2.new(0, 14, 0, posY)
+	box.BackgroundColor3 = Color3.fromRGB(24, 28, 42)
+	box.BackgroundTransparency = 0.2
+	box.ZIndex = 12
+	box.Parent = mainFrame
+
+	local bCorner = Instance.new("UICorner")
+	bCorner.CornerRadius = UDim.new(0, 10)
+	bCorner.Parent = box
+
+	local bStroke = Instance.new("UIStroke")
+	bStroke.Color = Color3.fromRGB(45, 55, 80)
+	bStroke.Thickness = 1
+	bStroke.Parent = box
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -24, 0, 22)
+	label.Position = UDim2.new(0, 12, 0, 4)
+	label.BackgroundTransparency = 1
+	label.Text = "ปรับขนาดเป้ากลางจอ (FOV): " .. Config.FOVRadius
+	label.TextColor3 = Color3.fromRGB(235, 240, 250)
+	label.Font = Enum.Font.GothamMedium
+	label.TextSize = 12
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.ZIndex = 13
+	label.Parent = box
+
+	local track = Instance.new("TextButton")
+	track.Size = UDim2.new(1, -24, 0, 8)
+	track.Position = UDim2.new(0, 12, 0, 34)
+	track.BackgroundColor3 = Color3.fromRGB(45, 52, 72)
+	track.Text = ""
+	track.AutoButtonColor = false
+	track.ZIndex = 13
+	track.Parent = box
+
+	local tCorner = Instance.new("UICorner")
+	tCorner.CornerRadius = UDim.new(1, 0)
+	tCorner.Parent = track
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.new((Config.FOVRadius - 50) / 250, 0, 1, 0)
+	fill.BackgroundColor3 = Color3.fromRGB(0, 190, 255)
+	fill.BorderSizePixel = 0
+	fill.ZIndex = 14
+	fill.Parent = track
+
+	local fCorner = Instance.new("UICorner")
+	fCorner.CornerRadius = UDim.new(1, 0)
+	fCorner.Parent = fill
+
+	local dragging = false
+	local function updateSlider(input)
+		local relativeX = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+		local newFOV = math.floor(50 + (relativeX * 250))
+		Config.FOVRadius = newFOV
+		fill.Size = UDim2.new(relativeX, 0, 1, 0)
+		label.Text = "ปรับขนาดเป้ากลางจอ (FOV): " .. newFOV
+		fovCircle.Size = UDim2.new(0, newFOV * 2, 0, newFOV * 2)
+	end
+
+	track.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			updateSlider(input)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			updateSlider(input)
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+end
+
+-- ==========================================
+-- 5. ระบบ ESP แบบใหม่ (Box สี่เหลี่ยม + เส้น Tracer + หลอดเลือด) เสถียรไม่เอ๋อ
+-- ==========================================
+local ESPCache = {}
+
+local function createPlayerESP(targetPlayer)
+	if targetPlayer == player or ESPCache[targetPlayer] then return end
+
+	-- กรอบสี่เหลี่ยม 2D รอบตัวละคร (Box ESP)
+	local box = Instance.new("Frame")
+	box.Name = targetPlayer.Name .. "_Box"
+	box.BackgroundTransparency = 1
+	box.BorderSizePixel = 0
+	box.Visible = false
+	box.ZIndex = 2
+	box.Parent = espFolder
+
+	local boxStroke = Instance.new("UIStroke")
+	boxStroke.Color = Color3.fromRGB(0, 220, 255)
+	boxStroke.Thickness = 1.6
+	boxStroke.Parent = box
+
+	local boxCorner = Instance.new("UICorner")
+	boxCorner.CornerRadius = UDim.new(0, 3)
+	boxCorner.Parent = box
+
+	-- เส้นลากจากล่างจอไปยังตัวละคร (Tracer Line ESP)
+	local line = Instance.new("Frame")
+	line.Name = targetPlayer.Name .. "_Tracer"
+	line.AnchorPoint = Vector2.new(0.5, 0.5)
+	line.BackgroundColor3 = Color3.fromRGB(0, 220, 255)
+	line.BorderSizePixel = 0
+	line.Visible = false
+	line.ZIndex = 2
+	line.Parent = espFolder
+
+	ESPCache[targetPlayer] = {
+		Box = box,
+		Tracer = line
+	}
+end
+
+local function removePlayerESP(targetPlayer)
+	local data = ESPCache[targetPlayer]
+	if data then
+		if data.Box then data.Box:Destroy() end
+		if data.Tracer then data.Tracer:Destroy() end
+		ESPCache[targetPlayer] = nil
+	end
+end
+
+Players.PlayerRemoving:Connect(removePlayerESP)
+
+local function updateAllESP()
+	local viewportSize = camera.ViewportSize
+	local originPoint = Vector2.new(viewportSize.X / 2, viewportSize.Y) -- จุดเริ่มต้นเส้นจากกึ่งกลางขอบล่างจอ
+
+	for _, targetPlayer in ipairs(Players:GetPlayers()) do
+		if targetPlayer ~= player then
+			if not ESPCache[targetPlayer] then
+				createPlayerESP(targetPlayer)
+			end
+
+			local espData = ESPCache[targetPlayer]
+			local char = targetPlayer.Character
+			local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+			local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+			local head = char and char:FindFirstChild("Head")
+
+			if char and humanoid and humanoid.Health > 0 and rootPart and head then
+				local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
+
+				-- อัปเดตตำแหน่ง Box และ Tracer เมื่อตัวละครอยู่ในหน้าจอ
+				if onScreen and rootPos.Z > 0 then
+					local topWorld = head.Position + Vector3.new(0, 1.1, 0)
+					local bottomWorld = rootPart.Position - Vector3.new(0, 3.0, 0)
+
+					local topScreen = camera:WorldToViewportPoint(topWorld)
+					local bottomScreen = camera:WorldToViewportPoint(bottomWorld)
+
+					local boxHeight = math.max(math.abs(bottomScreen.Y - topScreen.Y), 12)
+					local boxWidth = boxHeight * 0.58
+
+					-- 1. กรอบสี่เหลี่ยมรอบตัวผู้เล่น (Box ESP)
+					if Config.BoxESPEnabled then
+						espData.Box.Size = UDim2.new(0, boxWidth, 0, boxHeight)
+						espData.Box.Position = UDim2.new(0, rootPos.X - (boxWidth / 2), 0, topScreen.Y)
+						espData.Box.Visible = true
+					else
+						espData.Box.Visible = false
+					end
+
+					-- 2. เส้นลากไปยังผู้เล่น (Tracer ESP)
+					if Config.TracerESPEnabled then
+						local targetPoint = Vector2.new(rootPos.X, bottomScreen.Y)
+						local distance = (targetPoint - originPoint).Magnitude
+						local midPoint = (originPoint + targetPoint) / 2
+						local angle = math.deg(math.atan2(targetPoint.Y - originPoint.Y, targetPoint.X - originPoint.X))
+
+						espData.Tracer.Size = UDim2.new(0, distance, 0, 1.5)
+						espData.Tracer.Position = UDim2.new(0, midPoint.X, 0, midPoint.Y)
+						espData.Tracer.Rotation = angle
+						espData.Tracer.Visible = true
+					else
+						espData.Tracer.Visible = false
+					end
+				else
+					espData.Box.Visible = false
+					espData.Tracer.Visible = false
+				end
+
+				-- 3. หลอดเลือดบนหัว (Health Bar)
+				local hpGui = head:FindFirstChild("M7_HealthBar")
+				if Config.HealthBarEnabled then
+					if not hpGui then
+						hpGui = Instance.new("BillboardGui")
+						hpGui.Name = "M7_HealthBar"
+						hpGui.Size = UDim2.new(0, 60, 0, 8)
+						hpGui.StudsOffset = Vector3.new(0, 2.2, 0)
+						hpGui.AlwaysOnTop = true
+						hpGui.Parent = head
+
+						local bg = Instance.new("Frame")
+						bg.Name = "BG"
+						bg.Size = UDim2.new(1, 0, 1, 0)
+						bg.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+						bg.BorderSizePixel = 0
+						bg.Parent = hpGui
+
+						local bgCorner = Instance.new("UICorner")
+						bgCorner.CornerRadius = UDim.new(1, 0)
+						bgCorner.Parent = bg
+
+						local bar = Instance.new("Frame")
+						bar.Name = "Bar"
+						bar.Size = UDim2.new(1, 0, 1, 0)
+						bar.BackgroundColor3 = Color3.fromRGB(60, 235, 115)
+						bar.BorderSizePixel = 0
+						bar.Parent = bg
+
+						local barCorner = Instance.new("UICorner")
+						barCorner.CornerRadius = UDim.new(1, 0)
+						barCorner.Parent = bar
+					end
+
+					local bar = hpGui.BG:FindFirstChild("Bar")
+					if bar then
+						local hpRatio = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+						bar.Size = UDim2.new(hpRatio, 0, 1, 0)
+						bar.BackgroundColor3 = Color3.fromHSV(hpRatio * 0.33, 0.85, 0.95)
+					end
+				elseif hpGui then
+					hpGui:Destroy()
+				end
+			else
+				espData.Box.Visible = false
+				espData.Tracer.Visible = false
+				if head then
+					local hpGui = head:FindFirstChild("M7_HealthBar")
+					if hpGui then hpGui:Destroy() end
+				end
+			end
+		end
+	end
+end
+
+-- ==========================================
+-- 6. ระบบตรวจสอบสิ่งกีดขวาง (Raycast) และ ล็อคเป้าหมาย
+-- ==========================================
+local function isTargetVisible(targetPart, targetCharacter)
+	if not Config.WallCheck then
+		return true
+	end
+
+	local origin = camera.CFrame.Position
+	local direction = targetPart.Position - origin
+
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = {player.Character, camera}
+
+	local result = Workspace:Raycast(origin, direction, rayParams)
+	if result then
+		return result.Instance:IsDescendantOf(targetCharacter)
+	end
+	return true
+end
+
+local function getClosestTargetInFOV()
+	local closestPart = nil
+	local shortestDistance = Config.FOVRadius
+	local screenCenter = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+
+	for _, targetPlayer in ipairs(Players:GetPlayers()) do
+		if targetPlayer ~= player and targetPlayer.Character then
+			local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+			local targetPart = targetPlayer.Character:FindFirstChild("Head") or targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+			if humanoid and humanoid.Health > 0 and targetPart then
+				local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+				if onScreen and screenPos.Z > 0 then
+					local distance = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+					if distance <= shortestDistance and isTargetVisible(targetPart, targetPlayer.Character) then
+						shortestDistance = distance
+						closestPart = targetPart
+					end
+				end
+			end
+		end
+	end
+	return closestPart
+end
+
+-- ==========================================
+-- 7. ระบบเคลื่อนที่ M7 SPEED BOOST + HIGH JUMP
+-- ==========================================
+local function getHumanoid()
+	local character = player.Character
+	if not character then return nil end
+	return character:FindFirstChildOfClass("Humanoid")
+end
+
+local function updateMovement()
+	local humanoid = getHumanoid()
+	if not humanoid then return end
+
+	humanoid.WalkSpeed = M7Movement.SpeedEnabled
+		and M7Movement.WalkSpeed
+		or NORMAL_SPEED
+
+	humanoid.UseJumpPower = true
+	humanoid.JumpPower = M7Movement.JumpEnabled
+		and M7Movement.JumpPower
+		or NORMAL_JUMP
+end
+
+player.CharacterAdded:Connect(function(character)
+	character:WaitForChild("Humanoid")
+	task.wait(0.2)
+	updateMovement()
+end)
+
+-- อัปเดตการทำงานหลักทุกเฟรม
+RunService.RenderStepped:Connect(function()
+	if Config.TargetLockEnabled then
+		local target = getClosestTargetInFOV()
+		if target then
+			local targetCFrame = CFrame.new(camera.CFrame.Position, target.Position)
+			camera.CFrame = camera.CFrame:Lerp(targetCFrame, Config.LockSpeed)
+		end
+	end
+	updateAllESP()
+end)
+
+-- ==========================================
+-- 8. จัดวางปุ่มทั้งหมดลงในหน้าต่าง ✦ ค่ายM7 (8 เมนูครบชุด)
+-- ==========================================
+createToggle("เปิดใช้งานล็อคเป้า (เป้ากลางจอ)", 52, function(isOn)
+	Config.TargetLockEnabled = isOn
+	fovCircle.Visible = isOn
+end)
+
+createModeSwitcher(100)
+
+createToggle("ESP กรอบสี่เหลี่ยมรอบตัว (Box)", 150, function(isOn)
+	Config.BoxESPEnabled = isOn
+end)
+
+createToggle("ESP เส้นลากหาผู้เล่น (Tracer)", 198, function(isOn)
+	Config.TracerESPEnabled = isOn
+end)
+
+createToggle("แสดงหลอดเลือดบนหัว (Health Bar)", 246, function(isOn)
+	Config.HealthBarEnabled = isOn
+end)
+
+createFOVSlider(294)
+
+createToggle("วิ่งเร็ว (SPEED BOOST)", 354, function(isOn)
+	M7Movement.SpeedEnabled = isOn
+	updateMovement()
+end)
+
+createToggle("กระโดดสูง (HIGH JUMP)", 402, function(isOn)
+	M7Movement.JumpEnabled = isOn
+	updateMovement()
+end)
